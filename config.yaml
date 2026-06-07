@@ -1,0 +1,61 @@
+# ============================================
+# Groww Weekly Review Pulse — Configuration
+# ============================================
+# See docs/architecture.md §5.2 for schema reference.
+
+product:
+  name: groww
+  play_store_id: com.nextbillion.groww
+  display_name: Groww
+
+ingestion:
+  window_weeks: 10            # Rolling window for review collection
+  max_reviews: 5000           # Safety cap per run
+  language: en                # Filter to English reviews
+
+embedding:
+  provider: sentence-transformers   # Local model (Groq does not offer embeddings)
+  model: all-MiniLM-L6-v2
+  batch_size: 128
+
+clustering:
+  umap:
+    n_neighbors: 15
+    n_components: 5
+    min_dist: 0.0
+  hdbscan:
+    min_cluster_size: 10
+    min_samples: 5
+
+llm:
+  provider: groq
+  model: llama-3.3-70b-versatile
+  max_tokens_per_run: 50000   # Cost guard
+  temperature: 0.3
+
+preprocessing:
+  pii_scrub: true
+  min_review_length: 10       # Characters; skip very short reviews
+
+delivery:
+  google_doc_id: "YOUR_GOOGLE_DOC_ID_HERE"   # Target doc ID
+  stakeholders:
+    - team-product@example.com
+    - team-support@example.com
+  draft_only: true            # Staging default; set false for production
+  email_subject_template: "Groww Review Pulse — Week {iso_week}"
+
+mcp_servers:
+  google_docs:
+    command: "node"
+    args: ["mcp-servers/google-docs/index.js"]
+    env:
+      GOOGLE_CREDENTIALS_PATH: "mcp-servers/google-docs/credentials.json"
+  gmail:
+    command: "node"
+    args: ["mcp-servers/gmail/index.js"]
+    env:
+      GOOGLE_CREDENTIALS_PATH: "mcp-servers/gmail/credentials.json"
+
+run_log:
+  path: data/run_log.json

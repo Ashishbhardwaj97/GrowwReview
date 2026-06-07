@@ -1,0 +1,39 @@
+# ============================================
+# Groww Weekly Review Pulse — .gitignore
+# ============================================
+
+# --- Data & Run Logs ---
+data/
+
+# --- Secrets & Credentials ---
+.env
+*.credentials.json
+credentials.json
+token.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# --- Node.js ---
+node_modules/
+package-lock.json
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
