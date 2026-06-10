@@ -87,6 +87,8 @@ def load_config(config_path: str = "config.yaml") -> AppConfig:
         raw = yaml.safe_load(f)
         
     groq_api_key = os.environ.get("GROQ_API_KEY", "")
+    if not groq_api_key:
+        raise ValueError("GROQ_API_KEY environment variable is not set. Please ensure it is configured in your .env file or GitHub Secrets.")
         
     return AppConfig(
         product=ProductConfig(**raw.get("product", {})),
