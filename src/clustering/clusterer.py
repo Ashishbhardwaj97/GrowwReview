@@ -7,14 +7,14 @@ import umap
 import hdbscan
 
 from src.models.types import EmbeddedReview, Cluster, CleanReview
-from src.config import AppConfig, load_config
+from src.config import ClusteringConfig
 from src.utils.helpers import setup_logging
 import logging
 
 logger = logging.getLogger(__name__)
 
 class Clusterer:
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: ClusteringConfig):
         self.config = config
         
     def cluster(self, embedded_reviews: List[EmbeddedReview]) -> List[Cluster]:
@@ -22,7 +22,7 @@ class Clusterer:
             return []
             
         n_reviews = len(embedded_reviews)
-        min_cluster_size = self.config.clustering.hdbscan.min_cluster_size
+        min_cluster_size = self.config.hdbscan.min_cluster_size
         
         # Low data guard: if we have fewer reviews than min_cluster_size, group them all
         if n_reviews < min_cluster_size:
@@ -33,14 +33,14 @@ class Clusterer:
         
         # UMAP Projection
         logger.info(f"Projecting {n_reviews} embeddings using UMAP...")
-        n_neighbors = min(self.config.clustering.umap.n_neighbors, n_reviews - 1)
+        n_neighbors = min(self.config.umap.n_neighbors, n_reviews - 1)
         if n_neighbors < 2:
             n_neighbors = 2
             
         reducer = umap.UMAP(
             n_neighbors=n_neighbors,
-            n_components=self.config.clustering.umap.n_components,
-            min_dist=self.config.clustering.umap.min_dist,
+            n_components=self.config.umap.n_components,
+            min_dist=self.config.umap.min_dist,
             random_state=42 # for reproducibility
         )
         projected = reducer.fit_transform(embeddings)
@@ -48,8 +48,8 @@ class Clusterer:
         # HDBSCAN Clustering
         logger.info("Clustering projected vectors using HDBSCAN...")
         clusterer = hdbscan.HDBSCAN(
-            min_cluster_size=self.config.clustering.hdbscan.min_cluster_size,
-            min_samples=self.config.clustering.hdbscan.min_samples,
+            min_cluster_size=self.config.hdbscan.min_cluster_size,
+            min_samples=self.config.hdbscan.min_samples,
             gen_min_span_tree=True
         )
         cluster_labels = clusterer.fit_predict(projected)
