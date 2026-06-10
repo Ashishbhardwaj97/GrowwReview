@@ -1,7 +1,11 @@
 # Groww Weekly Review Pulse — Python Dependencies
 
 # --- Data Ingestion ---
-google-play-scraper>=1.3.0
+google-play-scraper>=1.2.0
+
+# --- Text Normalization ---
+emoji>=2.0.0
+langdetect>=1.0.9
 
 # --- Embedding ---
 sentence-transformers>=2.2.0
@@ -23,3 +27,6 @@ tiktoken>=0.5.0
 # --- Configuration ---
 pyyaml>=6.0
 python-dotenv>=1.0.0
+
+# --- MCP Integration ---
+mcp>=1.0.0

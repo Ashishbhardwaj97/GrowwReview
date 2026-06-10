@@ -38,24 +38,15 @@ preprocessing:
   min_review_length: 10       # Characters; skip very short reviews
 
 delivery:
-  google_doc_id: "YOUR_GOOGLE_DOC_ID_HERE"   # Target doc ID
+  google_doc_id: "1ilURGzK5iBWIhbRE2myjw_VQvPP8iv22rpucBQAbm7E"   # Target doc ID
   stakeholders:
-    - team-product@example.com
-    - team-support@example.com
+    - bhardwajashish9718@gmail.com
+    - bhardwajashish9717@gmail.com
   draft_only: true            # Staging default; set false for production
   email_subject_template: "Groww Review Pulse — Week {iso_week}"
 
-mcp_servers:
-  google_docs:
-    command: "node"
-    args: ["mcp-servers/google-docs/index.js"]
-    env:
-      GOOGLE_CREDENTIALS_PATH: "mcp-servers/google-docs/credentials.json"
-  gmail:
-    command: "node"
-    args: ["mcp-servers/gmail/index.js"]
-    env:
-      GOOGLE_CREDENTIALS_PATH: "mcp-servers/gmail/credentials.json"
+mcp_server:
+  url: "https://web-production-131a3.up.railway.app/sse"
 
 run_log:
   path: data/run_log.json

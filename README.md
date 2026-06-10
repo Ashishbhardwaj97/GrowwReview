@@ -39,6 +39,51 @@ copy .env.example .env
 python src/cli.py --product groww --week auto --dry-run
 ```
 
+## Setup Guide & Configuration Reference
+
+### Environment Variables (`.env`)
+
+See `.env.example` for the required keys.
+- `GROQ_API_KEY`: Required for LLM summarisation.
+- `MCP_SERVER_URL`: Optional. URL to your Google MCP server (overrides `config.yaml`).
+
+### `config.yaml` Reference
+
+- `delivery.google_doc_id`: The ID of the target Google Doc where reports will be appended.
+- `delivery.stakeholders`: List of email addresses to receive the draft email.
+- `mcp_server.url`: The Server-Sent Events (SSE) endpoint of the MCP server (e.g., `https://web-production-131a3.up.railway.app/sse`).
+- `delivery.draft_only`: If `true`, the email will only be created as a draft. `false` sends the email.
+
+### Remote MCP Server
+
+This system relies on a remote **Google MCP Server** to perform actions in Google Docs and Gmail securely.
+1. The server should expose an SSE endpoint (e.g. `/sse`) and accept JSON-RPC tool calls.
+2. The current production endpoint is `https://web-production-131a3.up.railway.app/sse`. Ensure this server is running and authenticated.
+
+## CLI Usage
+
+```bash
+# Full dry-run (does not connect to MCP, just logs what would happen)
+python src/cli.py --product groww --week auto --dry-run
+
+# Draft-only mode (appends to Docs, creates Gmail draft but does not send)
+python src/cli.py --product groww --week auto --draft-only
+
+# Force a re-run (ignores the run log and processes again)
+python src/cli.py --product groww --week auto --force
+```
+
+## Scheduling
+
+This pipeline is designed to run periodically (e.g., weekly on Mondays at 09:00 IST).
+A GitHub Actions workflow `.github/workflows/weekly-pulse.yml` is provided for automatic execution. 
+
+To use the GitHub Actions scheduler:
+1. Go to your GitHub repository settings -> **Secrets and variables** -> **Actions**.
+2. Add a new repository secret named `GROQ_API_KEY`.
+3. Optionally add `MCP_SERVER_URL` if you want to override the default URL in `config.yaml`.
+4. The workflow will automatically trigger based on the cron schedule (`30 3 * * 1` which is Monday 09:00 IST / 03:30 UTC).
+
 ## Project Structure
 
 See [`docs/architecture.md`](docs/architecture.md) for the full architecture and directory layout.
@@ -49,11 +94,3 @@ See [`docs/architecture.md`](docs/architecture.md) for the full architecture and
 - [Architecture](docs/architecture.md)
 - [Implementation Plan](docs/implementation-plan.md)
 - [Edge Cases](docs/edge-cases.md)
-
-## Configuration
-
-All settings are in [`config.yaml`](config.yaml). Secrets (API keys) go in `.env`.
-
----
-
-> **Note:** Full setup guide, CLI reference, and MCP server documentation will be added in Phase 6.

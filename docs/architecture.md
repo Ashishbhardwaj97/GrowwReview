@@ -22,9 +22,8 @@ flowchart TB
         P6["6. Report Rendering\nDocs JSON + Gmail HTML/text"]
     end
 
-    subgraph MCP["MCP Servers (shipped in-repo)"]
-        M1["Google Docs MCP Server"]
-        M2["Gmail MCP Server"]
+    subgraph MCP["Remote MCP Server"]
+        M1["Google Docs & Gmail MCP (Railway)"]
     end
 
     subgraph External["External Services"]
@@ -40,10 +39,9 @@ flowchart TB
     P5 -->|LLM calls| E4
     P5 --> P6
 
-    P6 -->|MCP tool call| M1
-    P6 -->|MCP tool call| M2
+    P6 -->|MCP tool call (SSE)| M1
     M1 -->|REST API| E2
-    M2 -->|REST API| E3
+    M1 -->|REST API| E3
 ```
 
 ---
@@ -73,9 +71,8 @@ block-beta
         EMAIL["Email Renderer"]
     end
     block:delivery["Delivery Layer (MCP)"]
-        columns 2
-        DOCS_MCP["Google Docs\nMCP Server"]
-        GMAIL_MCP["Gmail\nMCP Server"]
+        columns 1
+        REMOTE_MCP["Remote MCP Server\n(Railway)"]
     end
     block:infra["Infrastructure"]
         columns 3
@@ -103,8 +100,8 @@ block-beta
 | **LLM Summarisation** | Name each cluster as a theme, extract verbatim quotes (validated against source), propose action ideas | `List[Cluster]` → `PulseReport` |
 | **Report Renderer** | Convert `PulseReport` into Google Docs JSON batch-update request body | `PulseReport` → `DocsPayload` |
 | **Email Renderer** | Convert `PulseReport` into a teaser email (HTML + plain text) with deep link | `PulseReport` → `EmailPayload` |
-| **Google Docs MCP Server** | Expose MCP tools: `docs.appendSection`, `docs.findSection` | Wraps Google Docs REST API |
-| **Gmail MCP Server** | Expose MCP tools: `gmail.createDraft`, `gmail.send` | Wraps Gmail REST API |
+| **Google Docs MCP Tool** | Expose MCP tools: `docs.appendSection`, `docs.findSection` | Remote tool call |
+| **Gmail MCP Tool** | Expose MCP tools: `gmail.createDraft`, `gmail.send` | Remote tool call |
 | **Run Log** | Persist per-run delivery metadata for idempotency and auditing | JSON/SQLite keyed by `(product, iso_week)` |
 | **Config** | Centralised settings: product definitions, time window, LLM params, stakeholder list | YAML / `.env` |
 
@@ -121,8 +118,8 @@ sequenceDiagram
     participant CLU as Clustering
     participant LLM as LLM Summariser
     participant REND as Renderers
-    participant DOCS as Docs MCP Server
-    participant GMAIL as Gmail MCP Server
+    participant DOCS as Docs MCP Tool
+    participant GMAIL as Gmail MCP Tool
     participant LOG as Run Log
 
     CLI->>LOG: Check (groww, 2026-W23) — already delivered?
@@ -169,10 +166,10 @@ sequenceDiagram
 
 ### 4.1 What Is MCP in This Context
 
-The agent (CLI pipeline) acts as an **MCP host/client**. It communicates with two **MCP servers** shipped within this repository over `stdio` transport. Each server exposes a set of **tools** that the pipeline invokes.
+The agent (CLI pipeline) acts as an **MCP host/client**. It communicates with a remote **MCP server** hosted on Railway (`web-production-131a3.up.railway.app`) over `SSE` (Server-Sent Events) transport. The server exposes a set of **tools** that the pipeline invokes.
 
 > [!IMPORTANT]
-> The pipeline never imports `google-api-python-client` or holds OAuth tokens directly. All Google API interaction is delegated to the MCP servers, which own their own credential configuration.
+> The pipeline never imports `google-api-python-client` or holds OAuth tokens directly. All Google API interaction is delegated to the remote MCP server, which manages its own credential configuration.
 
 ### 4.2 Google Docs MCP Server
 
@@ -181,7 +178,7 @@ The agent (CLI pipeline) acts as an **MCP host/client**. It communicates with tw
 | `docs.appendSection` | `{docId, sectionHeading, bodyRequests[]}` | `{headingId}` | Appends a new dated section to the running pulse document. Uses the heading text as an idempotent anchor — if a section with the same heading already exists, returns its ID without duplicating. |
 | `docs.findSection` | `{docId, sectionHeading}` | `{found: bool, headingId?, url?}` | Checks whether a section already exists (used for idempotency pre-check and deep-link generation). |
 
-**Credential flow:** The server reads Google OAuth credentials from its own config (e.g. `mcp-servers/google-docs/credentials.json` + token cache), never from the pipeline's environment.
+**Credential flow:** The remote server manages Google OAuth credentials internally, never from the pipeline's environment.
 
 ### 4.3 Gmail MCP Server
 
@@ -199,21 +196,16 @@ flowchart LR
         A["Pipeline Orchestrator"]
     end
 
-    subgraph MCPDocs["google-docs-mcp (child process)"]
-        D["stdio transport"]
+    subgraph MCPRemote["Remote MCP Server (Railway)"]
+        D["SSE / HTTP transport"]
     end
 
-    subgraph MCPGmail["gmail-mcp (child process)"]
-        G["stdio transport"]
-    end
-
-    A -->|"JSON-RPC over stdin/stdout"| D
-    A -->|"JSON-RPC over stdin/stdout"| G
+    A -->|"JSON-RPC over SSE"| D
 ```
 
-- **Transport:** `stdio` (the agent spawns each MCP server as a child process)
+- **Transport:** `SSE` (Server-Sent Events over HTTP)
 - **Protocol:** JSON-RPC 2.0 per the MCP specification
-- **Lifecycle:** Started on demand by the pipeline, shut down after the run completes
+- **Lifecycle:** Persistent remote server; client connects on demand and disconnects after the run completes
 
 ---
 
@@ -333,17 +325,8 @@ delivery:
   draft_only: true           # Staging default; set false for production
   email_subject_template: "Groww Review Pulse — Week {iso_week}"
 
-mcp_servers:
-  google_docs:
-    command: "node"
-    args: ["mcp-servers/google-docs/index.js"]
-    env:
-      GOOGLE_CREDENTIALS_PATH: "mcp-servers/google-docs/credentials.json"
-  gmail:
-    command: "node"
-    args: ["mcp-servers/gmail/index.js"]
-    env:
-      GOOGLE_CREDENTIALS_PATH: "mcp-servers/gmail/credentials.json"
+mcp_server:
+  url: "https://web-production-131a3.up.railway.app/sse"
 
 run_log:
   path: data/run_log.json    # Or SQLite path
@@ -447,20 +430,7 @@ GrowwReview/
 │       ├── run_log.py             # Idempotency log (read/write RunRecord)
 │       └── helpers.py             # ISO week math, logging setup, etc.
 │
-├── mcp-servers/
-│   ├── google-docs/
-│   │   ├── index.js               # MCP server entry point
-│   │   ├── tools.js               # Tool definitions (appendSection, findSection)
-│   │   ├── google-api.js           # Google Docs REST API wrapper
-│   │   ├── package.json
-│   │   └── credentials.json       # .gitignored — OAuth client secret
-│   │
-│   └── gmail/
-│       ├── index.js               # MCP server entry point
-│       ├── tools.js               # Tool definitions (createDraft, send, findMessage)
-│       ├── google-api.js           # Gmail REST API wrapper
-│       ├── package.json
-│       └── credentials.json       # .gitignored — OAuth client secret
+│
 │
 ├── data/
 │   └── run_log.json               # Delivery audit trail (gitignored)
@@ -479,13 +449,13 @@ GrowwReview/
 | Concern | Technology | Rationale |
 |---|---|---|
 | **Language (pipeline)** | Python 3.11+ | Rich ML/NLP ecosystem (UMAP, HDBSCAN, sentence-transformers) |
-| **Language (MCP servers)** | Node.js (TypeScript) | Official MCP SDK has strong Node.js support; lightweight for I/O-bound API proxying |
+| **Language (MCP servers)** | Python (FastAPI) | Server is deployed via FastAPI on Railway; provides SSE endpoints |
 | **Play Store scraping** | `google-play-scraper` (npm) or `google_play_scraper` (Python) | Well-maintained, handles pagination, reviews endpoint |
 | **Embeddings** | `all-MiniLM-L6-v2` (sentence-transformers) | Local model; no API key needed; Groq does not offer an embeddings API |
 | **Dimensionality reduction** | UMAP | Preserves local structure better than t-SNE; works well with HDBSCAN |
 | **Clustering** | HDBSCAN | Finds variable-density clusters; no need to pre-specify k |
 | **LLM** | Groq `llama-3.3-70b-versatile` | Extremely fast inference via Groq; high quality for summarisation tasks |
-| **MCP transport** | stdio | Simplest for co-located processes; no network overhead |
+| **MCP transport** | SSE (HTTP) | Required for remote server communication |
 | **Run log** | JSON file (upgrade path → SQLite) | Zero-dependency start; SQLite if audit queries become complex |
 | **Config** | YAML + `.env` | Human-readable; secrets in `.env`, settings in YAML |
 
@@ -517,8 +487,7 @@ GrowwReview/
 ```mermaid
 flowchart LR
     CRON["Cron / Task Scheduler\n(Monday 09:00 IST)"] -->|"python src/cli.py --product groww --week auto"| CLI["CLI Pipeline"]
-    CLI --> MCP1["google-docs-mcp\n(spawned)"]
-    CLI --> MCP2["gmail-mcp\n(spawned)"]
+    CLI --> MCP["Remote MCP Server\n(Railway)"]
 ```
 
 - **Weekly schedule:** Monday 09:00 IST via system cron (Linux) or Task Scheduler (Windows)

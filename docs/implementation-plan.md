@@ -34,9 +34,7 @@ gantt
     Email Renderer                 :p3b, after p3a, 1d
 
     section Phase 4
-    Google Docs MCP Server         :p4a, after p3b, 2d
-    Gmail MCP Server               :p4b, after p4a, 2d
-    MCP Client (Pipeline side)     :p4c, after p4b, 1d
+    MCP Client (Pipeline side)     :p4a, after p3b, 1d
 
     section Phase 5
     CLI Orchestrator               :p5a, after p4c, 2d
@@ -57,7 +55,7 @@ gantt
 
 | # | Task | Files | Detail |
 |---|---|---|---|
-| 0.1 | Initialise directory structure | All dirs under `src/`, `mcp-servers/`, `data/`, `docs/` | Match the structure in [architecture §8](file:///c:/Users/Ashish%20Bhardwaj/Downloads/GrowwReview/docs/architecture.md#L397) |
+| 0.1 | Initialise directory structure | All dirs under `src/`, `data/`, `docs/` | Match the structure in [architecture §8](file:///c:/Users/Ashish%20Bhardwaj/Downloads/GrowwReview/docs/architecture.md#L397) |
 | 0.2 | Create `requirements.txt` | `requirements.txt` | `google-play-scraper`, `umap-learn`, `hdbscan`, `sentence-transformers`, `groq`, `pyyaml`, `python-dotenv`, `tiktoken`, `fuzzywuzzy` |
 | 0.3 | Create `.env.example` | `.env.example` | Template for `GROQ_API_KEY` |
 | 0.4 | Create `config.yaml` | `config.yaml` | Full config per [architecture §5.2](file:///c:/Users/Ashish%20Bhardwaj/Downloads/GrowwReview/docs/architecture.md#L290) |
@@ -203,60 +201,23 @@ python -m src.clustering.clusterer --input data/test_embeddings.json
 
 ---
 
-## Phase 4 — MCP Servers & Client
+## Phase 4 — Remote MCP Integration
 
-> **Goal:** Build two MCP servers (Google Docs, Gmail) and the pipeline-side MCP client that spawns and communicates with them.
+> **Goal:** Build the pipeline-side MCP client to connect with the pre-built, remote MCP server hosted on Railway.
 
 > [!IMPORTANT]
-> MCP servers are **Node.js / TypeScript** projects shipped inside `mcp-servers/`. The pipeline (Python) communicates with them over **stdio** using JSON-RPC 2.0.
+> The MCP server is already built and deployed to `web-production-131a3.up.railway.app`. The pipeline communicates with it over **SSE** (Server-Sent Events) using JSON-RPC 2.0.
 
-### 4A — Google Docs MCP Server
-
-| # | Task | File | Detail |
-|---|---|---|---|
-| 4A.1 | Project setup | `mcp-servers/google-docs/package.json` | Init Node.js project; deps: `@modelcontextprotocol/sdk`, `googleapis` |
-| 4A.2 | Google API wrapper | `mcp-servers/google-docs/google-api.js` | OAuth2 token loading from `credentials.json` + token cache; Docs API client |
-| 4A.3 | `docs.findSection` tool | `mcp-servers/google-docs/tools.js` | Search document body for heading matching `sectionHeading`; return `{found, headingId, url}` |
-| 4A.4 | `docs.appendSection` tool | Same file | Append batch-update requests to end of document; return `{headingId}`. Internally calls `findSection` first — if heading exists, return existing ID (idempotent) |
-| 4A.5 | MCP server entry point | `mcp-servers/google-docs/index.js` | Register tools, start stdio transport, handle JSON-RPC lifecycle |
-
-**Verification:**
-```bash
-echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node mcp-servers/google-docs/index.js
-# Should return tool definitions
-```
-
----
-
-### 4B — Gmail MCP Server
+### 4A — MCP Client (Pipeline Side)
 
 | # | Task | File | Detail |
 |---|---|---|---|
-| 4B.1 | Project setup | `mcp-servers/gmail/package.json` | Init Node.js project; deps: `@modelcontextprotocol/sdk`, `googleapis` |
-| 4B.2 | Google API wrapper | `mcp-servers/gmail/google-api.js` | OAuth2 token loading; Gmail API client |
-| 4B.3 | `gmail.createDraft` tool | `mcp-servers/gmail/tools.js` | Create draft with `{to[], subject, htmlBody, textBody}`; return `{draftId}` |
-| 4B.4 | `gmail.send` tool | Same file | Send a draft by ID; return `{messageId, threadId}` |
-| 4B.5 | `gmail.findMessage` tool | Same file | Search sent messages by query string (subject pattern); return `{found, messageId}` |
-| 4B.6 | MCP server entry point | `mcp-servers/gmail/index.js` | Register tools, start stdio transport |
+| 4A.1 | MCP client class | [mcp_client.py](file:///c:/Users/Ashish%20Bhardwaj/Downloads/GrowwReview/src/delivery/mcp_client.py) | Connect to remote MCP server via SSE, send JSON-RPC requests, parse responses |
+| 4A.2 | Server connection | Same file | `start()` → connects to `mcp_server.url` from config; `stop()` → graceful disconnect |
+| 4A.3 | Tool invocation | Same file | `call_tool(server, tool_name, params) → result` with timeout and error handling |
+| 4A.4 | Convenience wrappers | Same file | `append_doc_section(payload)`, `create_draft(payload)`, `send_draft(draft_id)`, `find_doc_section(heading)`, `find_sent_email(query)` |
 
-**Verification:**
-```bash
-echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node mcp-servers/gmail/index.js
-# Should return tool definitions
-```
-
----
-
-### 4C — MCP Client (Pipeline Side)
-
-| # | Task | File | Detail |
-|---|---|---|---|
-| 4C.1 | MCP client class | [mcp_client.py](file:///c:/Users/Ashish%20Bhardwaj/Downloads/GrowwReview/src/delivery/mcp_client.py) | Spawn MCP server as subprocess, open stdio pipes, send JSON-RPC requests, parse responses |
-| 4C.2 | Server lifecycle | Same file | `start()` → spawns process from config (`mcp_servers.google_docs.command` + `args`); `stop()` → graceful shutdown |
-| 4C.3 | Tool invocation | Same file | `call_tool(server, tool_name, params) → result` with timeout and error handling |
-| 4C.4 | Convenience wrappers | Same file | `append_doc_section(payload)`, `create_draft(payload)`, `send_draft(draft_id)`, `find_doc_section(heading)`, `find_sent_email(query)` |
-
-**Verification:** Integration test: start Docs MCP server → call `tools/list` → verify response.
+**Verification:** Integration test: connect to remote MCP server → call `tools/list` → verify response.
 
 ---
 
@@ -272,7 +233,7 @@ echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | node mcp-servers/gmail/i
 | 5A.2 | Pipeline orchestration | Same file | Sequential execution: idempotency check → ingest → preprocess → embed → cluster → summarise → render → deliver |
 | 5A.3 | Dry-run mode | Same file | Execute everything through rendering but skip all MCP calls; log what *would* be delivered |
 | 5A.4 | Draft-only mode | Same file | Execute full pipeline including Docs MCP, create Gmail draft, but do **not** call `gmail.send` |
-| 5A.5 | Error handling | Same file | Catch stage-level exceptions; log errors; ensure MCP servers are shut down in `finally` block |
+| 5A.5 | Error handling | Same file | Catch stage-level exceptions; log errors; ensure MCP connection is closed in `finally` block |
 | 5A.6 | Summary output | Same file | Print run summary: reviews ingested, clusters found, themes generated, delivery status |
 
 ---
@@ -321,7 +282,7 @@ python src/cli.py --product groww --week 2026-W23 --draft-only --force
 | # | Task | File | Detail |
 |---|---|---|---|
 | 6B.1 | Complete README | `README.md` | Setup guide, config reference, CLI usage, MCP server setup, OAuth credential setup |
-| 6B.2 | MCP server READMEs | `mcp-servers/*/README.md` | Per-server setup: credentials, scopes needed, testing commands |
+| 6B.2 | Remote MCP reference | `README.md` | Document required remote MCP server URL and connection instructions |
 | 6B.3 | Scheduling setup | (system) | Document cron job / Task Scheduler entry for weekly Monday 09:00 IST run |
 | 6B.4 | `.env.example` completion | `.env.example` | All required environment variables documented |
 
@@ -339,11 +300,9 @@ flowchart TD
     P2B --> P2C["Phase 2C\nLLM Summarisation"]
     P2C --> P3A["Phase 3A\nDocs Renderer"]
     P2C --> P3B["Phase 3B\nEmail Renderer"]
-    P3A --> P4A["Phase 4A\nGoogle Docs MCP"]
-    P3B --> P4B["Phase 4B\nGmail MCP"]
-    P4A --> P4C["Phase 4C\nMCP Client"]
-    P4B --> P4C
-    P4C --> P5A["Phase 5A\nCLI Orchestrator"]
+    P3A --> P4A["Phase 4A\nMCP Client"]
+    P3B --> P4A
+    P4A --> P5A["Phase 5A\nCLI Orchestrator"]
     P5A --> P5B["Phase 5B\nIdempotency + Run Log"]
     P5B --> P6A["Phase 6A\nEnd-to-End Testing"]
     P6A --> P6B["Phase 6B\nDocs + Scheduling"]
@@ -358,8 +317,6 @@ flowchart TD
     style P3A fill:#533483,stroke:#e94560,color:#fff
     style P3B fill:#533483,stroke:#e94560,color:#fff
     style P4A fill:#e94560,stroke:#f39422,color:#fff
-    style P4B fill:#e94560,stroke:#f39422,color:#fff
-    style P4C fill:#e94560,stroke:#f39422,color:#fff
     style P5A fill:#f39422,stroke:#e94560,color:#000
     style P5B fill:#f39422,stroke:#e94560,color:#000
     style P6A fill:#2ecc71,stroke:#27ae60,color:#000
@@ -377,7 +334,7 @@ flowchart TD
 | **Google OAuth token expiry during run** | Delivery failure mid-pipeline | MCP servers handle token refresh internally; pipeline retries tool calls once |
 | **Insufficient reviews for meaningful clusters** | Low-quality report | Low-data guard (Phase 2B.5); produce simplified "insufficient data" report variant |
 | **Token cost overrun** | Unexpected API bills | `max_tokens_per_run` budget with hard enforcement (Phase 2C.4) |
-| **MCP server crash** | Pipeline hangs or fails | Subprocess timeout; error propagation; `finally` block ensures cleanup (Phase 5A.5) |
+| **Remote MCP server unavailable** | Pipeline hangs or fails | SSE connection timeout/retries; error propagation; `finally` block ensures cleanup (Phase 5A.5) |
 
 ---
 
@@ -392,9 +349,9 @@ A phase is **complete** when:
 
 The **project** is done when:
 
-- [ ] `python src/cli.py --product groww --week auto --draft-only` completes a full pipeline run
-- [ ] Google Docs contains the appended weekly section with themes, quotes, and action ideas
-- [ ] Gmail draft exists with a correct deep link to the Docs section
-- [ ] Re-running the same week skips gracefully (idempotency)
-- [ ] `--dry-run` mode produces output without any delivery side effects
-- [ ] README documents setup, config, and usage
+- [x] `python src/cli.py --product groww --week auto --draft-only` completes a full pipeline run
+- [x] Google Docs contains the appended weekly section with themes, quotes, and action ideas
+- [x] Gmail draft exists with a correct deep link to the Docs section
+- [x] Re-running the same week skips gracefully (idempotency)
+- [x] `--dry-run` mode produces output without any delivery side effects
+- [x] README documents setup, config, and usage
