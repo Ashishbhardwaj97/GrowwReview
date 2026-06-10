@@ -90,7 +90,21 @@ class GroqSummariser:
         # Skip miscellaneous/noise cluster for theming if we want, but usually cluster_id=0 is miscellaneous
         # We can still summarise it if we want. Let's summarise all provided clusters.
         
-        reviews_text = "\n".join(f"- {r.clean_text}" for r in cluster.reviews)
+        max_prompt_tokens = max(1000, self.tpm_limit - 1500)
+        sampled_reviews = []
+        current_tokens = self._count_tokens(SYSTEM_PROMPT) + self._count_tokens(CLUSTER_PROMPT_TEMPLATE.format(reviews_text=""))
+        
+        for r in cluster.reviews:
+            review_tokens = self._count_tokens(f"- {r.clean_text}\n")
+            if current_tokens + review_tokens > max_prompt_tokens:
+                break
+            sampled_reviews.append(r)
+            current_tokens += review_tokens
+            
+        if len(sampled_reviews) < len(cluster.reviews):
+            logger.info(f"Sampled {len(sampled_reviews)} out of {len(cluster.reviews)} reviews to fit within TPM limit.")
+            
+        reviews_text = "\n".join(f"- {r.clean_text}" for r in sampled_reviews)
         user_prompt = CLUSTER_PROMPT_TEMPLATE.format(reviews_text=reviews_text)
         
         prompt_tokens = self._count_tokens(SYSTEM_PROMPT) + self._count_tokens(user_prompt)
