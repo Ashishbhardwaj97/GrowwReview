@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class GroqSummariser:
     def __init__(self, config: LlmConfig):
         self.config = config
-        self.client = Groq(api_key=config.api_key)
+        self.client = Groq(api_key=config.api_key, max_retries=5, timeout=120.0)
         self.model = config.model
         self.temperature = config.temperature
         self.max_tokens = config.max_tokens_per_run
@@ -145,7 +145,7 @@ class GroqSummariser:
             )
             
         except Exception as e:
-            logger.error(f"Failed to summarise cluster {cluster.cluster_id}: {e}")
+            logger.error(f"Failed to summarise cluster {cluster.cluster_id}: {e}", exc_info=True)
             return None
 
     def summarise(self, clusters: List[Cluster], product: str, iso_week: str) -> PulseReport:
