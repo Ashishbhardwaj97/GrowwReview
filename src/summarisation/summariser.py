@@ -9,7 +9,7 @@ from fuzzywuzzy import fuzz
 from groq import Groq
 
 from src.models.types import Cluster, Theme, PulseReport, CleanReview
-from src.config import AppConfig, load_config
+from src.config import LlmConfig
 from src.summarisation.prompts import SYSTEM_PROMPT, CLUSTER_PROMPT_TEMPLATE
 from src.utils.helpers import setup_logging
 import logging
@@ -17,12 +17,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 class GroqSummariser:
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: LlmConfig):
         self.config = config
-        self.client = Groq(api_key=config.llm.api_key)
-        self.model = config.llm.model
-        self.temperature = config.llm.temperature
-        self.max_tokens = config.llm.max_tokens_per_run
+        self.client = Groq(api_key=config.api_key)
+        self.model = config.model
+        self.temperature = config.temperature
+        self.max_tokens = config.max_tokens_per_run
         
         # Approximate tokenizer since we just need a budget guard
         try:
@@ -32,8 +32,8 @@ class GroqSummariser:
             
         self.tokens_used = 0
         self.request_history = deque()
-        self.rpm_limit = config.llm.rpm_limit
-        self.tpm_limit = config.llm.tpm_limit
+        self.rpm_limit = config.rpm_limit
+        self.tpm_limit = config.tpm_limit
 
     def _count_tokens(self, text: str) -> int:
         if self.tokenizer:
@@ -148,7 +148,7 @@ class GroqSummariser:
             logger.error(f"Failed to summarise cluster {cluster.cluster_id}: {e}")
             return None
 
-    def summarise(self, clusters: List[Cluster], iso_week: str) -> PulseReport:
+    def summarise(self, clusters: List[Cluster], product: str, iso_week: str) -> PulseReport:
         self.tokens_used = 0
         themes = []
         total_reviews = 0
@@ -165,7 +165,7 @@ class GroqSummariser:
             total_reviews += cluster.size
             
         return PulseReport(
-            product=self.config.product.name,
+            product=product,
             iso_week=iso_week,
             total_reviews=total_reviews,
             themes=themes,
